@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { Server } from 'socket.io';
 import { createServer } from 'http';
+import { URL } from 'url';
 
 dotenv.config();
 
@@ -15,11 +16,12 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer);
 
+const parsedUrl = new URL(process.env.REDIS_URL as string);
 const redis = new Redis({
-  host: process.env.REDIS_HOST as string,
-  port: Number(process.env.REDIS_PORT) as number,
-  password: process.env.REDIS_PASSWORD as string,
-  username: process.env.REDIS_USERNAME,
+  host: parsedUrl.hostname,
+  port: Number(parsedUrl.port),
+  password: parsedUrl.password,
+  username: parsedUrl.username,
 });
 
 const getRandomString = (length: number) => {
