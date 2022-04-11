@@ -6,7 +6,7 @@
   "scripts": {
     "build": "rimraf dist && tsc ",
     "dev": "nodemon",
-    "start": "production node dist/app.js",
+    "start": "node dist/app.js",
     "test": "yarn run unit-test && yarn run integration-test",
     "format": "prettier --write src/"
   },
