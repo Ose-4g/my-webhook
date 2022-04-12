@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import { Server } from 'socket.io';
 import { createServer } from 'http';
 import { URL } from 'url';
+import bcrypt from 'bcryptjs';
+import { response } from './response';
 
 dotenv.config();
 
@@ -29,30 +31,49 @@ const getRandomString = (length: number) => {
   return val.substring(0, length);
 };
 
-app.get('/api/v1/get-url', async (req: Request, res: Response) => {
-  const { email } = req.query;
-  if (!email) {
-    return res.status(400).json({ message: 'email is required, please provide your email' });
-  }
-  try {
-    let url = await redis.get(email as string);
-    let status = 200;
-    if (!url) {
-      const code = getRandomString(Number(process.env.CODE_LENGTH));
-      url = `${req.protocol + '://' + req.headers.host}/${code}/webhook`;
-      status = 201;
-    }
-    const nSeconds = Number(process.env.NO_OF_DAYS_EXPIRY) * 24 * 60 * 60;
-    await redis.set(email as string, url, 'EX', nSeconds);
+const nSeconds = Number(process.env.NO_OF_DAYS_EXPIRY) * 24 * 60 * 60;
 
-    return res.status(status).json({ mesage: 'fetched webhook url successfully', url });
+interface RedisDoc {
+  url: string;
+  hashedPassword: string;
+}
+
+app.post('/api/v1/get-url', async (req: Request, res: Response) => {
+  try {
+    const { password } = req.body;
+    let url;
+
+    //create a random code and use it to generate a url
+    const code = getRandomString(Number(process.env.CODE_LENGTH));
+    url = `${req.protocol + '://' + req.headers.host}/${code}/webhook`;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const data: RedisDoc = { url, hashedPassword };
+    await redis.set(code, JSON.stringify(data), 'EX', nSeconds);
+
+    return response(res, 201, 'fetched webhook url successfully', { url });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({ mesage: 'something went very wrong' });
+    return response(res, 500, 'something went very wrong');
   }
 });
 
-app.all('/:code/webhook', (req: Request, res: Response) => {
+app.post('/api/v1/authenticate', async (req: Request, res: Response) => {
+  const { code, password } = req.body;
+  if (!code) return response(res, 400, 'code is required');
+  if (!password) return response(res, 400, 'password is required');
+
+  const data = await redis.get(code);
+  if (!data) return response(res, 404, 'code not found');
+
+  const { hashedPassword, url } = JSON.parse(data) as RedisDoc;
+
+  const isMatch = await bcrypt.compare(password, hashedPassword);
+  if (!isMatch) return response(res, 401, 'invalid code or password');
+
+  return response(res, 200, 'Authentication successful', { code, url });
+});
+
+app.all('/:code/webhook', async (req: Request, res: Response) => {
   const { code } = req.params;
   const { method, headers, query, body, params, originalUrl } = req;
   const data = {
@@ -65,6 +86,9 @@ app.all('/:code/webhook', (req: Request, res: Response) => {
   };
   io.sockets.emit(code, data);
   res.status(200).json({ message: data });
+
+  const doc = await redis.get(code);
+  if (doc) await redis.set(code, doc, 'EX', nSeconds);
 });
 
 app.use('*', (req: Request, res: Response) => {
