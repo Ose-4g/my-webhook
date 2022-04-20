@@ -18,6 +18,8 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer);
 
+const disallowedHeaders = new Set(['accept', 'content-type', 'user-agent', 'content-length', 'host', 'connection']);
+
 const parsedUrl = new URL(process.env.REDIS_URL as string);
 const redis = new Redis({
   host: parsedUrl.hostname,
@@ -76,14 +78,24 @@ app.post('/api/v1/authenticate', async (req: Request, res: Response) => {
 app.all('/:code/webhook', async (req: Request, res: Response) => {
   const { code } = req.params;
   const { method, headers, query, body, params, originalUrl } = req;
+  const headersCopy: any = {};
+
+  for (const key in headers) {
+    if (!disallowedHeaders.has(key.toLowerCase())) {
+      headersCopy[key] = headers[key];
+    }
+  }
   const data = {
     originalUrl,
     method,
-    headers,
+    headers: headersCopy,
     query,
     body,
     params,
   };
+
+  if (process.env.NODE_ENV === 'development') console.log(data);
+
   io.sockets.emit(code, data);
   res.status(200).json({ message: data });
 
