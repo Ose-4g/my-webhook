@@ -94,7 +94,7 @@ app.all('/:code/webhook', async (req: Request, res: Response) => {
     params,
   };
 
-  console.log(data);
+  if (process.env.NODE_ENV === 'development') console.log(data);
 
   io.sockets.emit(code, data);
   res.status(200).json({ message: data });
