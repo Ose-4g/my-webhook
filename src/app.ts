@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
@@ -40,6 +40,12 @@ interface RedisDoc {
   hashedPassword: string;
 }
 
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setTimeout(120000, () => {
+    return response(res, 400, 'Request timed out. Something went very wrong');
+  });
+  next();
+});
 app.post('/api/v1/get-url', async (req: Request, res: Response) => {
   try {
     const { password } = req.body;
@@ -97,7 +103,10 @@ app.all('/:code/webhook', async (req: Request, res: Response) => {
   if (process.env.NODE_ENV === 'development') console.log(data);
 
   io.sockets.emit(code, data);
-  res.status(200).json({ message: data });
+  io.sockets.on(code, (message) => {
+    res.status(200).send(message);
+  });
+  //res.status(200).json({ message: data });
 
   const doc = await redis.get(code);
   if (doc) await redis.set(code, doc, 'EX', nSeconds);
